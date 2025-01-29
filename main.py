@@ -17,14 +17,40 @@ Revision History
 
 # TODO - Change the PORT and USER_NAME Values before running
 DEBUG = True
-PORT = 8001
+PORT = 10201
 USER_NAME = "jsmith"
 # TODO - change your method of saving information from the very rudimentary method here
 hand = [] # list of cards in our hand
 discard = [] # list of cards organized as a stack
+num_of_each = []
 
 # set up the FastAPI application
 app = FastAPI()
+
+
+def sort_by_value(hand):
+    hand_list = []
+    for card in list(hand):
+        # print(card)
+        hand_list.append([str(card)[0], str(card)[1]])  #[val, suit]
+
+    for card in hand_list:
+        if (card[0] == 'T'):
+            card[0] = '10'
+        elif (card[0] == 'J'):
+            card[0] = '11'
+        elif (card[0] == 'Q'):
+            card[0] = '12'
+        elif (card[0] == 'K'):
+            card[0] = '13'
+        elif (card[0] == 'A'):
+            card[0] = '14'
+
+    hand_list.sort(key=lambda card: int(card[0]))
+    for card in hand_list:
+        hand_list[hand_list.index(card)] = str(card[0]) + str(card[1])
+    return hand_list
+
 
 # set up the API endpoints
 @app.get("/")
@@ -38,6 +64,18 @@ class GameInfo(BaseModel):
     opponent: str
     hand: str
 
+
+# data class used to receive data from API POST
+class UpdateInfo(BaseModel):
+    game_id: str
+    event: str
+
+
+# data class used to receive data from API POST
+class HandInfo(BaseModel):
+    hand: str
+
+
 @app.post("/start-2p-game/")
 async def start_game(game_info: GameInfo):
     ''' Game Server calls this endpoint to inform player a new game is starting. '''
@@ -45,13 +83,14 @@ async def start_game(game_info: GameInfo):
     global hand
     global discard
     hand = game_info.hand.split(" ")
-    hand.sort()
+    hand.sort() #needs to be on a separate line else hand is None, idk why
+    global num_of_each
+    for i in range(0, 13):
+        num_of_each.append(0)
     logging.info("2p game started, hand is "+str(hand))
+    logging.info("Hand sorted by value is: " + str(sort_by_value(hand)))
     return {"status": "OK"}
 
-# data class used to receive data from API POST
-class HandInfo(BaseModel):
-    hand: str
 
 @app.post("/start-2p-hand/")
 async def start_hand(hand_info: HandInfo):
@@ -60,8 +99,13 @@ async def start_hand(hand_info: HandInfo):
     global hand
     global discard
     hand = hand_info.hand.split(" ").sort()
+    global num_of_each
+    for i in range(0, 13):
+        num_of_each.append(0)
     logging.info("2p hand started, hand is " + str(hand))
+    logging.info("Hand sorted by value is: " + str(sort_by_value(hand)))
     return {"status": "OK"}
+
 
 def process_events(event_text):
     ''' Shared function to process event text from various API endpoints '''
@@ -75,16 +119,12 @@ def process_events(event_text):
             hand.append(event_line.split(" ")[-1])
             hand.sort()
             print("Hand is now "+str(hand))
-            logging.info("Drew a "+event_line.split(" ")[-1]+", hand is now: "+str(hand))
+            # logging.info("Drew a "+event_line.split(" ")[-1]+", hand is now: "+str(hand))
         if ("discards" in event_line):  # add a card to discard pile
             discard.insert(0, event_line.split(" ")[-1])
         if ("takes" in event_line): # remove a card from discard pile
             discard.pop(0)
 
-# data class used to receive data from API POST
-class UpdateInfo(BaseModel):
-    game_id: str
-    event: str
 
 @app.post("/update-2p-game/")
 async def update_2p_game(update_info: UpdateInfo):
@@ -96,6 +136,7 @@ async def update_2p_game(update_info: UpdateInfo):
     process_events(update_info.event)
     return {"status": "OK"}
 
+
 @app.post("/draw/")
 async def draw(update_info: UpdateInfo):
     ''' Game Server calls this endpoint to start player's turn with draw from discard pile or draw pile.'''
@@ -106,6 +147,7 @@ async def draw(update_info: UpdateInfo):
     if any(discard[0][0] in s for s in hand): # if our hand contains a matching card, take it
         return {"play": "draw discard"}
     return {"play": "draw stock"} # Otherwise, draw from stock
+
 
 @app.post("/lay-down/")
 async def lay_down(update_info: UpdateInfo):
@@ -133,20 +175,20 @@ async def lay_down(update_info: UpdateInfo):
         if (of_a_kind_count[0]>0):
             for i in range(len(hand)-1,-1, -1):
                 if (i==0):
-                    logging.info("Discarding "+hand[0])
+                    # logging.info("Discarding "+hand[0])
                     return {"play":"discard "+hand.pop(0)}
                 if hand[i][0] != hand[i-1][0]:
-                    logging.info("Discarding "+hand[i])
+                    # logging.info("Discarding "+hand[i])
                     return {"play":"discard "+hand.pop(i)}
 
         # discard the highest 2 of a kind
             i=len(hand)-1
             while (i>0):
                 if (i==1):
-                    logging.info("Discarding "+hand[1])
+                    # logging.info("Discarding "+hand[1])
                     return {"play":"discard "+hand.pop(1)}
                 if hand[i][0] != hand[i-2][0]:
-                    logging.info("Discarding "+hand[i])
+                    # logging.info("Discarding "+hand[i])
                     return {"play":"discard "+hand.pop(i)}
                 while hand[i][0] == hand[i-1][0]: i-=1 #skip over meldable sets
                 i-=1
@@ -182,6 +224,7 @@ async def lay_down(update_info: UpdateInfo):
 
     logging.info("Playing: "+play_string)
     return {"play":play_string}
+
 
 @app.get("/shutdown")
 async def shutdown_API():
@@ -227,3 +270,4 @@ if __name__ == "__main__":
 
     # run the client API using uvicorn
     uvicorn.run(app, host="127.0.0.1", port=PORT)
+
