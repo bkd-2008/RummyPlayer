@@ -1,3 +1,5 @@
+import copy
+
 import requests
 from fastapi import FastAPI
 import fastapi
@@ -6,6 +8,7 @@ import uvicorn
 import os
 import signal
 import logging
+import numpy as np
 
 """
 By Todd Dole, Revision 1.1
@@ -18,11 +21,32 @@ Revision History
 # TODO - Change the PORT and USER_NAME Values before running
 DEBUG = True
 PORT = 10201
-USER_NAME = "jsmith"
+USER_NAME = "bkd2008"
 # TODO - change your method of saving information from the very rudimentary method here
 hand = [] # list of cards in our hand
 discard = [] # list of cards organized as a stack
+hand_matrix = np.zeros((4, 13))
+card_matrix = np.zeros((4, 13)) #{0: unknown, 1: my hand, 2: opponent hand, 3: discard, 4: stock}
 num_of_each = []
+diamonds = hand_matrix[0]
+hearts = hand_matrix[1]
+spades = hand_matrix[2]
+clubs = hand_matrix[3]
+to_numeric = {
+    'T': 10,
+    'J': 11,
+    'Q': 12,
+    'K': 13,
+    'A': 14,
+    'D': 0,
+    'H': 1,
+    'S': 2,
+    'C': 3
+}
+from_numeric = {num: letter for letter, num in to_numeric.items()}
+
+hand_length = 10
+drew_discard = False
 
 # set up the FastAPI application
 app = FastAPI()
@@ -30,6 +54,15 @@ app = FastAPI()
 
 def sort_by_value(hand):
     hand_list = []
+    for i in range(10):
+        for j in range(4):
+            if (hand_matrix[i][j] == 1):
+                card = (int(i+2), from_numeric[j])
+    for i in range(10, 15):
+        for j in range(4):
+            if (hand_matrix[i][j] == 1):
+                card = (i, from_numeric[j])
+
     for card in list(hand):
         # print(card)
         hand_list.append([str(card)[0], str(card)[1]])  #[val, suit]
@@ -46,10 +79,28 @@ def sort_by_value(hand):
         elif (card[0] == 'A'):
             card[0] = '14'
 
-    hand_list.sort(key=lambda card: int(card[0]))
-    for card in hand_list:
-        hand_list[hand_list.index(card)] = str(card[0]) + str(card[1])
+
+    hand_list.sort(key=lambda card: int(card[0]))   #Got this line from chatgpt
+    # for card in hand_list:
+    #     hand_list[hand_list.index(card)] = str(card[0]) + str(card[1])
     return hand_list
+
+def to_matrix(hand):
+    for card in hand:
+        val = card[0]
+        suit = card[1]
+        if (not val.isnumeric()):
+            val = to_numeric[card[0]]
+        suit = to_numeric[card[1]]
+
+        card = (int(val), suit)
+        logging.info(card)
+
+        hand_matrix[int(suit)][int(val)-2] = 1
+
+    logging.info(hand_matrix)
+
+
 
 
 # set up the API endpoints
@@ -80,15 +131,22 @@ class HandInfo(BaseModel):
 async def start_game(game_info: GameInfo):
     ''' Game Server calls this endpoint to inform player a new game is starting. '''
     # TODO - Your code here - replace the lines below
-    global hand
-    global discard
+
     hand = game_info.hand.split(" ")
+    hand_matrix = to_matrix(copy.deepcopy(hand))
+
+    global discard
+
+    hand_sorted_val = sort_by_value(hand)
     hand.sort() #needs to be on a separate line else hand is None, idk why
     global num_of_each
-    for i in range(0, 13):
+    for i in range(13):
         num_of_each.append(0)
+    for card in hand_sorted_val:
+        num_of_each[int(card[0])-2] += 1
     logging.info("2p game started, hand is "+str(hand))
-    logging.info("Hand sorted by value is: " + str(sort_by_value(hand)))
+    logging.info("Hand sorted by value is: " + str(hand_sorted_val))
+    logging.info("Number of each value is: " + str(num_of_each))
     return {"status": "OK"}
 
 
@@ -97,6 +155,9 @@ async def start_hand(hand_info: HandInfo):
     ''' Game Server calls this endpoint to inform player a new hand is starting, continuing the previous game. '''
     # TODO - Your code here
     global hand
+    hand = hand_info.hand.split(" ")
+    hand_matrix = to_matrix(copy.deepcopy(hand))
+
     global discard
     hand = hand_info.hand.split(" ").sort()
     global num_of_each
