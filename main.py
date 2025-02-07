@@ -25,13 +25,10 @@ USER_NAME = "bkd2008"
 # TODO - change your method of saving information from the very rudimentary method here
 hand = [] # list of cards in our hand
 discard = [] # list of cards organized as a stack
-hand_matrix = np.zeros((4, 13))
-card_matrix = np.zeros((4, 13)) #{0: unknown, 1: my hand, 2: opponent hand, 3: discard, 4: stock}
+hand_matrix = np.zeros((13, 4)) #h_m[value][suit]
+card_matrix = np.zeros((13, 4)) #{0: unknown, 1: my hand, 2: opponent hand, 3: discard, 4: stock, 5: meld}
 num_of_each = []
-diamonds = hand_matrix[0]
-hearts = hand_matrix[1]
-spades = hand_matrix[2]
-clubs = hand_matrix[3]
+
 to_numeric = {
     'T': 10,
     'J': 11,
@@ -54,38 +51,27 @@ app = FastAPI()
 
 def sort_by_value(hand):
     hand_list = []
-    for i in range(10):
+    for i in range(8):
         for j in range(4):
             if (hand_matrix[i][j] == 1):
                 card = (int(i+2), from_numeric[j])
-    for i in range(10, 15):
+    for i in range(8, 12):
         for j in range(4):
             if (hand_matrix[i][j] == 1):
                 card = (i, from_numeric[j])
 
     for card in list(hand):
-        # print(card)
+        # print(card + ", value is a " + str(type(card[0])) + ", suit is a " + str(type(card[1])))
         hand_list.append([str(card)[0], str(card)[1]])  #[val, suit]
 
-    for card in hand_list:
-        if (card[0] == 'T'):
-            card[0] = '10'
-        elif (card[0] == 'J'):
-            card[0] = '11'
-        elif (card[0] == 'Q'):
-            card[0] = '12'
-        elif (card[0] == 'K'):
-            card[0] = '13'
-        elif (card[0] == 'A'):
-            card[0] = '14'
+    hand_list.sort(key=lambda card: int(card[0]) if card[0].isnumeric() else int(to_numeric[card[0]])) #Got this line from chatgpt
 
-
-    hand_list.sort(key=lambda card: int(card[0]))   #Got this line from chatgpt
-    # for card in hand_list:
-    #     hand_list[hand_list.index(card)] = str(card[0]) + str(card[1])
     return hand_list
 
-def to_matrix(hand):
+
+def init_matrix(hand):
+    global hand_matrix
+    hand_matrix = np.zeros((13, 4))
     for card in hand:
         val = card[0]
         suit = card[1]
@@ -94,11 +80,12 @@ def to_matrix(hand):
         suit = to_numeric[card[1]]
 
         card = (int(val), suit)
-        logging.info(card)
+        # logging.info(card)
 
-        hand_matrix[int(suit)][int(val)-2] = 1
+        hand_matrix[int(val)-2][int(suit)] = 1      #hand_matrix[value][suit]
 
-    logging.info(hand_matrix)
+    # logging.info(hand_matrix)
+    return hand_matrix
 
 
 
@@ -132,21 +119,17 @@ async def start_game(game_info: GameInfo):
     ''' Game Server calls this endpoint to inform player a new game is starting. '''
     # TODO - Your code here - replace the lines below
 
+    global hand
     hand = game_info.hand.split(" ")
-    hand_matrix = to_matrix(copy.deepcopy(hand))
+    hand_matrix = init_matrix(copy.deepcopy(hand))
 
     global discard
 
     hand_sorted_val = sort_by_value(hand)
     hand.sort() #needs to be on a separate line else hand is None, idk why
-    global num_of_each
-    for i in range(13):
-        num_of_each.append(0)
-    for card in hand_sorted_val:
-        num_of_each[int(card[0])-2] += 1
     logging.info("2p game started, hand is "+str(hand))
     logging.info("Hand sorted by value is: " + str(hand_sorted_val))
-    logging.info("Number of each value is: " + str(num_of_each))
+    logging.info("Card locations are \n" + str(hand_matrix))
     return {"status": "OK"}
 
 
@@ -154,17 +137,17 @@ async def start_game(game_info: GameInfo):
 async def start_hand(hand_info: HandInfo):
     ''' Game Server calls this endpoint to inform player a new hand is starting, continuing the previous game. '''
     # TODO - Your code here
+
     global hand
     hand = hand_info.hand.split(" ")
-    hand_matrix = to_matrix(copy.deepcopy(hand))
+    hand_matrix = init_matrix(copy.deepcopy(hand))
 
     global discard
-    hand = hand_info.hand.split(" ").sort()
-    global num_of_each
-    for i in range(0, 13):
-        num_of_each.append(0)
+
+    hand_sorted_val = sort_by_value(hand)
     logging.info("2p hand started, hand is " + str(hand))
-    logging.info("Hand sorted by value is: " + str(sort_by_value(hand)))
+    logging.info("Hand sorted by value is: " + str(hand_sorted_val))
+    logging.info("Card locations are \n" + str(hand_matrix))
     return {"status": "OK"}
 
 
@@ -195,6 +178,7 @@ async def update_2p_game(update_info: UpdateInfo):
     '''
     # TODO - Your code here - update this section if you want
     process_events(update_info.event)
+    logging.info(update_info.event)
     return {"status": "OK"}
 
 
@@ -203,6 +187,7 @@ async def draw(update_info: UpdateInfo):
     ''' Game Server calls this endpoint to start player's turn with draw from discard pile or draw pile.'''
     # TODO - Your code here - everything from here to end of function
     process_events(update_info.event)
+    logging.info(update_info.event)
     if len(discard)<1: # If the discard pile is empty, draw from stock
         return {"play": "draw stock"}
     if any(discard[0][0] in s for s in hand): # if our hand contains a matching card, take it
@@ -217,6 +202,7 @@ async def lay_down(update_info: UpdateInfo):
     global hand
     global discard
     process_events(update_info.event)
+    logging.info(update_info.event)
     of_a_kind_count = [0, 0, 0, 0] # how many 1 of a kind, 2 of a kind, etc in our hand
     last_val = hand[0][0]
     count = 0
