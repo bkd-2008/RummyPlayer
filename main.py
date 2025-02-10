@@ -27,6 +27,7 @@ USER_NAME = "bkd2008"
 hand = []  # list of cards in our hand
 discard = []  # list of cards organized as a stack
 hand_matrix = np.zeros((13, 4))  # h_m[value][suit]
+#separate value for top of discard? In my hand but from discard?
 card_matrix = np.zeros((13, 4))  # {0: unknown, 1: my hand, 2: opponent hand, 3: discard, 4: stock, 5: meld}
 num_of_each = []
 
@@ -78,6 +79,14 @@ def init_matrix(hand):
     # logging.info(hand_matrix)
     return hand_matrix
 
+def update_matrix(card, value):
+    loc = card
+    logging.info(loc)
+    # {0: unknown, 1: my hand, 2: opponent hand, 3: discard, 4: stock, 5: meld}
+    if loc[0].isnumeric():
+        hand_matrix[int(loc[0]) - 2][int(to_numeric[loc[1]])] = value
+    else:
+        hand_matrix[int(to_numeric[loc[0]]) - 2][int(to_numeric[loc[1]])] = value
 
 # set up the API endpoints
 @app.get("/")
@@ -151,12 +160,22 @@ def process_events(event_text):
 
         if (USER_NAME + " draws") in event_line or (USER_NAME + " takes") in event_line:
             print("In draw, hand is " + str(hand))
-            hand.append(event_line.split(" ")[-1])
-            hand.sort()
+            new_card = event_line.split(" ")[-1]
+            # logging.info(new_card + " with value 1")
+            update_matrix(new_card, 1)
+
             print("Hand is now " + str(hand))
             # logging.info("Drew a "+event_line.split(" ")[-1]+", hand is now: "+str(hand))
+        elif " takes" in event_line:    # i.e. opponent takes discard
+            drawn_card = event_line.split(" ")[-1]
+            # logging.info(event_line.split(" "))
+            # logging.info(new_card + " with value 2")
+            update_matrix(drawn_card, 2)
+
         if "discards" in event_line:  # add a card to discard pile
             discard.insert(0, event_line.split(" ")[-1])
+            discarded_card = event_line.split(" ")[-1]
+            update_matrix(discarded_card, 3)
         if "takes" in event_line:  # remove a card from discard pile
             discard.pop(0)
 
@@ -170,6 +189,12 @@ async def update_2p_game(update_info: UpdateInfo):
     # TODO - Your code here - update this section if you want
     process_events(update_info.event)
     logging.info(update_info.event)
+    count_of_matrix = [0, 0, 0, 0, 0]
+    for i in range(13):
+        for j in range(4):
+            count_of_matrix[int(hand_matrix[i][j])] += 1
+    logging.info(hand_matrix)
+    logging.info(count_of_matrix)
     return {"status": "OK"}
 
 
